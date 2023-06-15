@@ -6,12 +6,9 @@ import scipy.ndimage as scim
 import scipy.ndimage.interpolation as sii
 import os
 import os.path as osp
-#import cPickle as cp
-import _pickle as cp
-#import Image
+import pickle as cp
 from PIL import Image
 from poisson_reconstruct import blit_images
-import pickle
 
 def sample_weighted(p_dict):
     ps = p_dict.keys()
@@ -47,7 +44,7 @@ class FontColor(object):
     def __init__(self, col_file):
         with open(col_file,'rb') as f:
             #self.colorsRGB = cp.load(f)
-            u = pickle._Unpickler(f)
+            u = cp._Unpickler(f)
             u.encoding = 'latin1'
             p = u.load()
             self.colorsRGB = p
@@ -436,6 +433,7 @@ class Colorize(object):
         for i in place_order[::-1]:
             # get the "location" of the text in the image:
             ## this is the minimum x and y coordinates of text:
+            #print(f'text_arr[{i}] = {text_arr[i]}')
             loc = np.where(text_arr[i])
             lx, ly = np.min(loc[0]), np.min(loc[1])
             mx, my = np.max(loc[0]), np.max(loc[1])
