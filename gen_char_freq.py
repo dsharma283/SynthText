@@ -35,12 +35,15 @@ def generate_char_freq_save_filtered(fd, viz, outfile):
             of.write(filtered)
     fd.close()
 
-    freq = dict(cntr)
+    freq = {}
+    for k in sorted(dict(cntr)):
+        freq[k] = dict(cntr)[k]
     total = sum(freq.values())
     norm_freq = {k: v / total for k, v in freq.items()}
-    if viz is True:
-        for k in sorted(norm_freq.items()):
+    if viz:
+        for k in norm_freq.items():
             print(k)
+    print(norm_freq)
     return norm_freq
 
 
@@ -55,7 +58,7 @@ def start_main():
         exit(0)
     infile = sys.argv[1]
     outfile = sys.argv[2]
-    viz = bool(sys.argv[3])
+    viz = int(sys.argv[3])
 
     fd = read_file(infile)
     if fd is None:
