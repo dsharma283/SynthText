@@ -10,12 +10,13 @@ import _pickle as cp
 import scipy.signal as ssig
 import scipy.stats as sstat
 import pygame, pygame.locals
-from pygame import freetype
+#from pygame import freetype
 #import Image
 from PIL import Image
 import math
 from common import *
 import pickle
+import cv2 as cv
 
 def sample_weighted(p_dict):
     ps = list(p_dict.keys())
@@ -83,17 +84,18 @@ class RenderFont(object):
     def __init__(self, data_dir='data'):
         # distribution over the type of text:
         # whether to get a single word, paragraph or a line:
-        self.p_text = {0.0 : 'WORD',
+        self.p_text = {1.0 : 'WORD',
                        0.0 : 'LINE',
-                       1.0 : 'PARA'}
+                       0.0 : 'PARA'}
 
         ## TEXT PLACEMENT PARAMETERS:
         self.f_shrink = 0.90
-        self.max_shrink_trials = 5 # 0.9^5 ~= 0.6
+        self.max_shrink_trials = 5  # 0.9^5 ~= 0.6
         # the minimum number of characters that should fit in a mask
         # to define the maximum font height.
         self.min_nchar = 2
-        self.min_font_h = 16 #px : 0.6*12 ~ 7px <= actual minimum height
+        #self.min_font_h = 16 #px : 0.6*12 ~ 7px <= actual minimum height
+        self.min_font_h = 10 #px : 0.6*12 ~ 7px <= actual minimum height
         self.max_font_h = 120 #px
         self.p_flat = 0.10
 
@@ -111,6 +113,78 @@ class RenderFont(object):
         self.font_state = FontState(data_dir)
 
         pygame.init()
+
+    def get_curve_baseline(self, font, text):
+        wl = len(text)
+        mid_idx = wl//2
+        BS = self.baselinestate.get_sample()
+        curve = [BS['curve'](i-mid_idx) for i in range(wl)]
+        curve[mid_idx] = -np.sum(curve) / (wl-1)
+        rots = [-int(math.degrees(math.atan(BS['diff'](i-mid_idx)/(font.size/2)))) for i in range(wl)]
+        return BS, rots, curve
+
+    def place_char_by_char(self, surf, font, curve, rots, fsize, word_text):
+        bbs = []
+        wl = len(word_text)
+        mid_idx = wl // 2
+
+        # place middle char
+        rect = font.get_rect(word_text[mid_idx])
+        rect.centerx = surf.get_rect().centerx
+        rect.centery = surf.get_rect().centery + rect.height
+        rect.centery +=  curve[mid_idx]
+        ch_bounds = font.render_to(surf, rect, word_text[mid_idx], rotation=rots[mid_idx])
+        ch_bounds.x = rect.x + ch_bounds.x
+        ch_bounds.y = rect.y - ch_bounds.y
+        mid_ch_bb = np.array(ch_bounds)
+
+        # render chars to the left and right:
+        last_rect = rect
+        ch_idx = []
+        for i in range(wl):
+            #skip the middle character
+            if i==mid_idx:
+                bbs.append(mid_ch_bb)
+                ch_idx.append(i)
+                continue
+
+            if i < mid_idx: #left-chars
+                i = mid_idx-1-i
+            elif i==mid_idx+1: #right-chars begin
+                last_rect = rect
+
+            ch_idx.append(i)
+            ch = word_text[i]
+
+            newrect = font.get_rect(ch)
+            newrect.y = last_rect.y
+            if i > mid_idx:
+                newrect.topleft = (last_rect.topright[0]+2, newrect.topleft[1])
+            else:
+                newrect.topright = (last_rect.topleft[0]-2, newrect.topleft[1])
+            newrect.centery = max(newrect.height, min(fsize[1] - newrect.height, newrect.centery + curve[i]))
+            try:
+                bbrect = font.render_to(surf, newrect, ch, rotation=rots[i])
+            except ValueError:
+                bbrect = font.render_to(surf, newrect, ch)
+            bbrect.x = newrect.x + bbrect.x
+            bbrect.y = newrect.y - bbrect.y
+            bbs.append(np.array(bbrect))
+            last_rect = newrect
+        # correct the bounding-box order:
+        bbs_sequence_order = [None for i in ch_idx]
+        for idx,i in enumerate(ch_idx):
+            bbs_sequence_order[i] = bbs[idx]
+        bbs = bbs_sequence_order
+
+        # get the union of characters for cropping:
+        r0 = pygame.Rect(bbs[0])
+        rect_union = r0.unionall(bbs)
+
+        # crop the surface to fit the text:
+        bbs = np.array(bbs)
+        surf_arr, bbs = crop_safe(pygame.surfarray.pixels_alpha(surf), rect_union, bbs, pad=5)
+        return surf_arr.swapaxes(0,1), bbs
 
     def render_multiline(self,font,text):
         """
@@ -179,77 +253,38 @@ class RenderFont(object):
         # create the surface:
         lspace = font.get_sized_height() + 1
         lbound = font.get_rect(word_text)
-        fsize = (round(2.0*lbound.width), round(3*lspace))
+        #fsize = (round(2.0*lbound.width), round(3*lspace))
+        fsize = (round(1.0*lbound.width), round(1*lspace))
         surf = pygame.Surface(fsize, pygame.locals.SRCALPHA, 32)
 
+        '''
         # baseline state
-        mid_idx = wl//2
-        BS = self.baselinestate.get_sample()
-        curve = [BS['curve'](i-mid_idx) for i in range(wl)]
-        curve[mid_idx] = -np.sum(curve) / (wl-1)
-        rots  = [-int(math.degrees(math.atan(BS['diff'](i-mid_idx)/(font.size/2)))) for i in range(wl)]
+        BS, rots, curve = self.get_curve_baseline(word_text, font)
+        rect = font.get_rect(word_text, rotation=int(np.abs(rots[0])))
+        ch_bounds = font.render_to(surf, rect, word_text, rotation=int(rots[0]))
+        '''
 
-        bbs = []
-        # place middle char
-        rect = font.get_rect(word_text[mid_idx])
-        rect.centerx = surf.get_rect().centerx
-        rect.centery = surf.get_rect().centery + rect.height
-        rect.centery +=  curve[mid_idx]
-        ch_bounds = font.render_to(surf, rect, word_text[mid_idx], rotation=rots[mid_idx])
-        ch_bounds.x = rect.x + ch_bounds.x
-        ch_bounds.y = rect.y - ch_bounds.y
-        mid_ch_bb = np.array(ch_bounds)
+        ch_bounds = font.render_to(surf, lbound, word_text)
+        bb = []
+        vizbb = np.asarray(ch_bounds.topleft)
+        bb.append(ch_bounds.x)
+        vizbb = np.vstack((vizbb, np.asarray(ch_bounds.topright)))
+        bb.append(ch_bounds.y)
+        vizbb = np.vstack((vizbb, np.asarray(ch_bounds.bottomright)))
+        bb.append(ch_bounds.width)
+        vizbb = np.vstack((vizbb, np.asarray(ch_bounds.bottomleft)))
+        bb.append(ch_bounds.height)
+        bbs = np.asarray([bb])
+        # Not cropping multiple bounding boxes right for now.
+        #surf_arr, bbs = crop_safe(pygame.surfarray.pixels_alpha(surf), rect, bbs, pad=5)
+        surf_arr = pygame.surfarray.pixels_alpha(surf).swapaxes(0, 1)
 
-        # render chars to the left and right:
-        last_rect = rect
-        ch_idx = []
-        for i in range(wl):
-            #skip the middle character
-            if i==mid_idx: 
-                bbs.append(mid_ch_bb)
-                ch_idx.append(i)
-                continue
-
-            if i < mid_idx: #left-chars
-                i = mid_idx-1-i
-            elif i==mid_idx+1: #right-chars begin
-                last_rect = rect
-
-            ch_idx.append(i)
-            ch = word_text[i]
-
-            newrect = font.get_rect(ch)
-            newrect.y = last_rect.y
-            if i > mid_idx:
-                newrect.topleft = (last_rect.topright[0]+2, newrect.topleft[1])
-            else:
-                newrect.topright = (last_rect.topleft[0]-2, newrect.topleft[1])
-            newrect.centery = max(newrect.height, min(fsize[1] - newrect.height, newrect.centery + curve[i]))
-            try:
-                bbrect = font.render_to(surf, newrect, ch, rotation=rots[i])
-            except ValueError:
-                bbrect = font.render_to(surf, newrect, ch)
-            bbrect.x = newrect.x + bbrect.x
-            bbrect.y = newrect.y - bbrect.y
-            bbs.append(np.array(bbrect))
-            last_rect = newrect
-        
-        # correct the bounding-box order:
-        bbs_sequence_order = [None for i in ch_idx]
-        for idx,i in enumerate(ch_idx):
-            bbs_sequence_order[i] = bbs[idx]
-        bbs = bbs_sequence_order
-
-        # get the union of characters for cropping:
-        r0 = pygame.Rect(bbs[0])
-        rect_union = r0.unionall(bbs)
-
-        # crop the surface to fit the text:
-        bbs = np.array(bbs)
-        surf_arr, bbs = crop_safe(pygame.surfarray.pixels_alpha(surf), rect_union, bbs, pad=5)
-        surf_arr = surf_arr.swapaxes(0,1)
+        '''
+        Not placing char-by-char for now
+        surf_arr, bbs = self.place_char_by_char(surf, font, curve, rots, fsize, word_text)q
+        '''
+        # self.visualize_bb(surf_arr, vizbb)
         return surf_arr, word_text, bbs
-
 
     def get_nline_nchar(self,mask_size,font_height,font_width):
         """
@@ -360,8 +395,7 @@ class RenderFont(object):
 
             # compute the max-number of lines/chars-per-line:
             nline,nchar = self.get_nline_nchar(mask.shape[:2],f_h,f_h*f_asp)
-            #print "  > nline = %d, nchar = %d"%(nline, nchar)
-
+            #print (f"  > nline = %d, nchar = %d"%(nline, nchar))
             assert nline >= 1 and nchar >= self.min_nchar
 
             # sample text:
@@ -369,13 +403,14 @@ class RenderFont(object):
             text = self.text_source.sample(nline,nchar,text_type)
             if len(text)==0 or np.any([len(line)==0 for line in text]):
                 continue
-            #print colorize(Color.GREEN, text)
+            #print(colorize(Color.GREEN, text))
 
             # render the text:
             txt_arr,txt,bb = self.render_curved(font, text)
             bb = self.bb_xywh2coords(bb)
 
             # make sure that the text-array is not bigger than mask array:
+            # print(txt_arr.shape[:2], mask.shape[:2])
             if np.any(np.r_[txt_arr.shape[:2]] > np.r_[mask.shape[:2]]):
                 #warn("text-array is bigger than mask")
                 continue
@@ -389,9 +424,16 @@ class RenderFont(object):
 
     def visualize_bb(self, text_arr, bbs):
         ta = text_arr.copy()
-        for r in bbs:
-            cv.rectangle(ta, (r[0],r[1]), (r[0]+r[2],r[1]+r[3]), color=128, thickness=1)
-        plt.imshow(ta,cmap='gray')
+        bb_dim = len(bbs.shape)
+        if bb_dim == 3:
+            for r in bbs:
+                cv.rectangle(ta, (r[0],r[1]), (r[0]+r[2],r[1]+r[3]), color=128, thickness=1)
+        elif bb_dim == 2:
+            cv.rectangle(ta, (bbs[0][0], bbs[0][1]), (bbs[2][0], bbs[2][1]), color=128, thickness=1)
+        else:
+            print(f'Invalid input bb_dim = {bb_dim}')
+            return
+        plt.imshow(ta, cmap='gray')
         plt.show()
 
 
@@ -400,7 +442,8 @@ class FontState(object):
     Defines the random state of the font rendering  
     """
     size = [50, 10]  # normal dist mean, std
-    underline = 0.05
+    #underline = 0.05
+    underline = 0.00 # Disabling underline for now.
     strong = 0.5
     oblique = 0.2
     wide = 0.5
@@ -447,15 +490,21 @@ class FontState(object):
         if size is None:
             size = 12 # doesn't matter as we take the RATIO
         chars = ''.join(self.char_freq.keys())
-        w = np.array(self.char_freq.values())
+        # w = np.array(self.char_freq.values())
+        w = np.asarray([val for val in self.char_freq.values()])
 
         # get the [height,width] of each character:
         try:
-            sizes = font.get_metrics(chars,size)
+            sizes = font.get_metrics(chars, size)
             good_idx = [i for i in range(len(sizes)) if sizes[i] is not None]
-            sizes,w = [sizes[i] for i in good_idx], w[good_idx]
-            sizes = np.array(sizes).astype('float')[:,[3,4]]        
-            r = np.abs(sizes[:,1]/sizes[:,0]) # width/height
+            # sizes, w = [sizes[i] for i in good_idx], w[good_idx]
+            # sizes = np.array(sizes).astype('float')[:, [3, 4]]
+            # r = np.abs(sizes[:, 1] / sizes[:, 0])  # width/height
+            sizes, w = [sizes[i] for i in good_idx], np.asarray([w[i] for i in good_idx])
+            sizes = np.array(sizes, dtype=np.float)[:, [3, 4]]
+            r = np.abs(np.divide(sizes[:, 1], sizes[:, 0],
+                                 out=np.ones_like(sizes[:, 1]) * np.inf,
+                                 where=sizes[:, 0] != 0)) # width/height
             good = np.isfinite(r)
             r = r[good]
             w = w[good]
@@ -499,7 +548,7 @@ class FontState(object):
         Initializes a pygame font.
         FS : font-state sample
         """
-        font = freetype.Font(fs['font'], size=fs['size'])
+        font = pygame.freetype.Font(fs['font'], size=fs['size'])
         font.underline = fs['underline']
         font.underline_adjustment = fs['underline_adjustment']
         font.strong = fs['strong']

@@ -471,13 +471,16 @@ class RendererV3(object):
     def get_min_h(selg, bb, text):
         # find min-height:
         h = np.linalg.norm(bb[:,3,:] - bb[:,0,:], axis=0)
+        '''
         # remove newlines and spaces:
-        text = ''.join(text.split())
+        # Uncomment when rendering char-by-char
+        text = ''.join(text.split(' '))
         assert len(text)==bb.shape[-1]
 
         alnum = np.array([ch.isalnum() for ch in text])
         h = h[alnum]
-        return np.min(h)
+        return np.min(h) '''
+        return h
 
 
     def feather(self, text_mask, min_h):
@@ -506,15 +509,21 @@ class RendererV3(object):
         # update the collision mask with text:
         collision_mask += (255 * (text_mask>0)).astype('uint8')
 
+        '''
+        Below code is not required when rendering word.
         # warp the object mask back onto the image:
         text_mask_orig = text_mask.copy()
         bb_orig = bb.copy()
+        '''
         text_mask = self.warpHomography(text_mask,H,rgb.shape[:2][::-1])
         bb = self.homographyBB(bb,Hinv)
 
+        '''
+        No Need to Filter char-by-char bounding boxes
         if not self.bb_filter(bb_orig,bb,text):
             #warn("bad charBB statistics")
             return #None
+        '''
 
         # get the minimum height of the character-BB:
         min_h = self.get_min_h(bb,text)
@@ -556,6 +565,10 @@ class RendererV3(object):
 
             # fit a rotated-rectangle:
             # change shape from 2x4xn_i -> (4*n_i)x2
+            ''' Below is fix to avoid divide-by-zero error. '''
+            if cc.shape[-1] == 0:
+                print(f'cc.shape[-1] is 0, continuing...')
+                continue
             cc = np.squeeze(np.concatenate(np.dsplit(cc,cc.shape[-1]),axis=1)).T.astype('float32')
             rect = cv2.minAreaRect(cc.copy())
             box = np.array(cv2.boxPoints(rect))
@@ -675,12 +688,14 @@ class RendererV3(object):
                     itext.append(text)
                     ibb.append(bb)
 
-            if  placed:
+            if placed:
                 # at least 1 word was placed in this instance:
                 idict['img'] = img
                 idict['txt'] = itext
+                ''' No char-by-char rendering thus no charBB '''
                 idict['charBB'] = np.concatenate(ibb, axis=2)
-                idict['wordBB'] = self.char2wordBB(idict['charBB'].copy(), ' '.join(itext))
+                ''' idict['wordBB'] = self.char2wordBB(idict['charBB'].copy(), ' '.join(itext)) '''
+                idict['wordBB'] = idict['charBB'].copy()
                 res.append(idict.copy())
                 if viz:
                     viz_textbb(1,img, [idict['wordBB']], alpha=1.0)
