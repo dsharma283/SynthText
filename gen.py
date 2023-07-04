@@ -114,7 +114,7 @@ def main(viz=False):
 
       # re-size uniformly:
       sz = depth.shape[:2][::-1]
-      img = np.array(img.resize(sz,Image.ANTIALIAS))
+      img = np.array(img.resize(sz,Image.LANCZOS))
       seg = np.array(Image.fromarray(seg).resize(sz,Image.NEAREST))
 
       print (colorize(Color.RED,'%d of %d'%(i,end_idx-1), bold=True))
