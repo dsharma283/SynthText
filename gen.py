@@ -59,7 +59,7 @@ def get_data():
   return h5py.File(DB_FNAME,'r')
 
 
-def add_res_to_db(imgname,res,db):
+def add_res_to_db(imgname,res,db, ascii_only=False):
   """
   Add the synthetically generated text image instance
   and other metadata to the dataset.
@@ -69,11 +69,13 @@ def add_res_to_db(imgname,res,db):
     dname = "%s_%d"%(imgname, i)
     db['data'].create_dataset(dname,data=res[i]['img'])
     db['data'][dname].attrs['charBB'] = res[i]['charBB']
-    db['data'][dname].attrs['wordBB'] = res[i]['wordBB']        
-    #db['data'][dname].attrs['txt'] = res[i]['txt']
-    L = res[i]['txt']
-    L = [n.encode("ascii", "ignore") for n in L]
-    db['data'][dname].attrs['txt'] = L
+    db['data'][dname].attrs['wordBB'] = res[i]['wordBB']
+    if ascii_only:
+        L = res[i]['txt']
+        L = [n.encode('ascii', "ignore") for n in L]
+        db['data'][dname].attrs['txt'] = L
+    else:
+        db['data'][dname].attrs['txt'] = res[i]['txt']
 
 
 def main(viz=False):

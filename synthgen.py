@@ -698,7 +698,7 @@ class RendererV3(object):
                 idict['wordBB'] = idict['charBB'].copy()
                 res.append(idict.copy())
                 if viz:
-                    viz_textbb(1,img, [idict['wordBB']], alpha=1.0)
+                    viz_textbb(1,img, [idict['wordBB']], alpha=0.5)
                     viz_masks(2,img,seg,depth,regions['label'])
                     # viz_regions(rgb.copy(),xyz,seg,regions['coeff'],regions['label'])
                     if i < ninstance-1:
