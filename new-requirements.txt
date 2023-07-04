@@ -1,0 +1,14 @@
+cycler
+h5py
+matplotlib
+numpy
+Pillow
+#pkg-resources
+pygame
+pyparsing
+python-dateutil
+pytz
+scipy
+six
+wget
+opencv
