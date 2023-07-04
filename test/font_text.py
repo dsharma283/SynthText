@@ -6,24 +6,6 @@ pygame.init()
 screen = pygame.display.set_mode((400, 200))
 clock = pygame.time.Clock()
 
-#font = pygame.freetype.Font("/usr/share/fonts/truetype/Sarai/Sarai.ttf", 50)
-#font.set_script("Deva")
-#surf = pygame.Surface((200, 70), pygame.locals.SRCALPHA, 32)
-#print(surf)
-#im = font.render(text, True, "black")
-#im = font.render(text True, "black")
-#print(im)
-#rect = font.get_rect(text, rotation=0)
-#im = font.render_to(surf, rect, text, rotation=0)
-#print(rect)
-#print(im)
-#r = surf.get_rect()
-#print(f'r = {r}')
-#r.x += 10
-#r.y += 10
-#rect = surf.blit(im, r)
-#print(f'rect = {rect}')
-
 def display_object(obj):
     while True:
         screen.fill("lightgreen")
